@@ -1,7 +1,8 @@
 """Step 4: assemble the kink maps of all sets into composite figures and plot the
 pooled statistics (i)-(iii) of kink_metrics.csv as a bar chart.
 
-Input:  <out>/kink_metrics.csv and <out>/lines/, filled/, filled_faded/ (from kink_maps.py)
+Input:  <out>/kink_metrics.csv and <out>/lines/, filled/, filled_faded/ (from kink_maps.py;
+        the kink and I(s) thresholds are read from kink_metrics.csv)
 Output: <out>/composite_kink_lines.png, composite_kink_filled.png,
         composite_kink_filled_faded.png, kink_metrics_chart.png
         Panels of sets that were not processed are drawn as empty dashed circles.
@@ -34,6 +35,10 @@ metrics = {}
 with open(os.path.join(OUT, 'kink_metrics.csv'), newline='') as f:
     for row in csv.DictReader(f):
         metrics[row['set']] = row
+if not metrics or 'kinks_per_R' not in next(iter(metrics.values())):
+    raise SystemExit('kink_metrics.csv is from kink_maps.py version 1.0; run the current kink_maps.py first')
+KDEG = float(next(iter(metrics.values()))['kink_deg'])
+IDEG = float(next(iter(metrics.values()))['intensity_deg'])
 
 ROWS_L = [('T1D3', 'D3 (High)'), ('T1D2', 'D2 (Mid)'), ('T1D1', 'D1 (Low)')]
 ROWS_R = [('T3D1', 'T3'), ('T2D1', 'T2'), ('T1D1', 'T1')]
@@ -54,8 +59,8 @@ def composite(subdir, prefix, fname):
                 if os.path.exists(p) and name in metrics:
                     ax.imshow(Image.open(p))
                     m = metrics[name]
-                    ax.set_xlabel('cusps ≥45°: %s   ·   turning %s°/R\nlength with turning >30°: %d%%' % (
-                        m['n_cusps_ge45'], m['turning_deg_per_R'].split('.')[0], round(100 * float(m['frac_len_I_gt30']))),
+                    ax.set_xlabel('kinks ≥%g°: %s   ·   turning %.0f°/R\nlength with I(s) > %g°: %d%%' % (
+                        KDEG, m['n_kinks'], float(m['turning_deg_per_R']), IDEG, round(100 * float(m['frac_len_I_gt']))),
                                   fontsize=8, color='0.25', labelpad=2)
                 else:
                     ax.imshow(np.ones((N, N, 3)))
@@ -69,10 +74,10 @@ def composite(subdir, prefix, fname):
         fig.text(0.26 if c0 == 0 else 0.72, 0.965, btitle, ha='center', va='center', fontsize=14, fontweight='bold')
     cax = fig.add_axes([0.915, 0.20, 0.018, 0.55])
     cb = matplotlib.colorbar.ColorbarBase(cax, cmap=CMAP, norm=NORM, ticks=[0, 15, 30, 45, 60])
-    cb.set_label('Local turning angle of contour trace (°)', fontsize=10)
+    cb.set_label('Local turning intensity I(s) of contour trace (°)', fontsize=10)
     cb.ax.set_yticklabels(['0', '15', '30', '45', '≥60'])
     cb.ax.tick_params(labelsize=9)
-    fig.text(0.924, 0.775, 'sharp cusp', ha='center', fontsize=8, color='0.4')
+    fig.text(0.924, 0.775, 'strong turning', ha='center', fontsize=8, color='0.4')
     fig.text(0.924, 0.175, 'straight', ha='center', fontsize=8, color='0.4')
     fig.savefig(os.path.join(OUT, fname))
     plt.close(fig)
@@ -83,9 +88,9 @@ composite('filled_faded', 'kink_fill_faded', 'composite_kink_filled_faded.png')
 
 # ---------------- summary chart ----------------
 fig, axes = plt.subplots(1, 3, figsize=(13, 3.8), dpi=150, gridspec_kw=dict(wspace=0.35))
-keys = [('cusps45_per_R', 'Sharp cusps (≥45°) per unit trace length (1/R)'),
+keys = [('kinks_per_R', 'Kinks (≥%g°) per unit trace length (1/R)' % KDEG),
         ('turning_deg_per_R', 'Total turning per unit trace length (°/R)'),
-        ('frac_len_I_gt30', 'Length fraction with turning > 30°')]
+        ('frac_len_I_gt', 'Length fraction with I(s) > %g°' % IDEG)]
 for ax, (key, ylab) in zip(axes, keys):
     groups = [('density', ['T1D1', 'T1D2', 'T1D3']), ('diameter', ['T1D1', 'T2D1', 'T3D1'])]
     x = 0; ticks = []; labels = []
