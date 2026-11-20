@@ -1,9 +1,8 @@
-[README.md].
 # Kink maps of CT wrinkle-contour traces
 
-Analysis code for the wrinkle-contour kink statistics (Figure 4; Supporting Notes S1 and S2 and the related Supporting Information) in:
+Analysis code for the wrinkle-contour kink statistics (Fig. 4 and SI Appendix, Supplementary Text) in:
 
-> J. Lim *et al.*, "Porosity-Mediated Conformality of Nanomesh Electrodes to Skin Roughness and Curvature,"
+> J. Lim *et al.*, "Porosity-Mediated Conformality of Nanomesh Electrodes to Skin Roughness and Curvature."
 
 The scripts take wrinkle contours traced manually as straight line elements on synchrotron X-ray micro-CT sections and chain them into polylines. They then measure the turning angle at every joint and report how often and how strongly the contours change direction. The output is three pooled statistics per specimen and a kink-intensity map.
 
@@ -12,7 +11,7 @@ The scripts take wrinkle contours traced manually as straight line elements on s
 Changes from version 1.0.0. The changes affect computed values; the version 1.0 behaviour can still be selected (see *Reproducing version 1.0*).
 
 * **Chaining within each section.** Traced elements are now chained into polylines only within the section (slide) they were traced on (`--chain section`, default). Version 1.0 chained the elements of all ten sections of a specimen together. End points of different sections that happened to lie within `CHAIN_TOL` of each other were then joined, typically two contours ending at the same point of the field-of-view edge, and created spurious reversals of 150–175°. `compare_chain_modes.py` lists these joints.
-* **Kinks.** Statistic (i), formerly *sharp cusps* (θ ≥ 45°), is now *kinks*: joints with θ ≥ θ_kink. Statistic (iii) uses I(s) > θ_I. The thresholds are options, `--kink-deg` and `--intensity-deg`, both 20° by default (version 1.0: 45° and 30°). The choice of 20° and the sensitivity of the statistics to all criteria are documented in Supporting Note S1 and produced by `kink_sensitivity.py`.
+* **Kinks.** Statistic (i), formerly *sharp cusps* (θ ≥ 45°), is now *kinks*: joints with θ ≥ θ_kink. Statistic (iii) uses I(s) > θ_I. The thresholds are options, `--kink-deg` and `--intensity-deg`, both 20° by default (version 1.0: 45° and 30°). The choice of 20° and the sensitivity of the statistics to all criteria are documented in SI Appendix, Supplementary Text, and produced by `kink_sensitivity.py`.
 * **Metrics table.** `kink_metrics.csv` columns were renamed: `n_cusps_ge45` → `n_kinks`, `cusps45_per_R` → `kinks_per_R`, `frac_len_I_gt30` → `frac_len_I_gt`; `n_cusps_ge30` was removed. The criteria of the run are written to every row (`kink_deg`, `intensity_deg`, `chain`), and rows computed with other criteria are not mixed into the table. Values are written with more decimals.
 * **Maps.** `kink_lines_marked_<set>.png` rings every kink (version 1.0: joints ≥ 60°).
 * **New scripts.** `split_pptx_sets.py` (several specimens in one PowerPoint file), `kink_replicates.py` (replicate specimens: composites and group statistics), `kink_sensitivity.py` (sensitivity analysis and turning-angle distribution), `compare_chain_modes.py` (effect of the chaining mode).
@@ -44,7 +43,7 @@ All lengths are normalized by the radius R of the circular field of view of the 
 | Threshold of statistic (iii) | `--intensity-deg` | I(s) > 20° |
 | Color scale of I(s) (HSB, S 0.8, B 1.0) | `KMAX` | 0° blue (hue 225°) → ≥60° red (hue 0°) |
 
-Pooled statistics per set (all ten sections of one specimen), as defined in Supporting Note S1:
+Pooled statistics per set (all ten sections of one specimen), as defined in SI Appendix, Supplementary Text:
 
 | Manuscript statistic | Column in `kink_metrics.csv` |
 |---|---|
@@ -123,7 +122,7 @@ At run time the script checks that it reproduces `kink_metrics.csv` at the crite
 
 ## Input
 
-The traced sections are not included in this repository. They are available from the corresponding authors upon reasonable request, as stated in the Data Availability Statement of the manuscript.
+The annotated section slides are not included in this repository. The traced contours in unit-disc coordinates (`traces_circ.json`), from which `kink_maps.py`, `kink_replicates.py`, `kink_sensitivity.py` and `compare_chain_modes.py` can be rerun, and the section overlays are deposited in Zenodo (https://doi.org/10.5281/zenodo.24328996).
 
 **One file per specimen.** Each set is a PowerPoint file named `[Curvature][TxDy]_raw.pptx` (e.g. `[Concave][T1D1]_raw.pptx`). The first slide is a title slide, followed by ten slides. Each of those slides holds one CT section image and the wrinkle contour traced over it as straight-line connector shapes. Only red (`FF0000`) straight-line connector shapes are read as traces; other shapes are reported and ignored. Unzip each file into its own folder of the same name under the input directory (default `raw/unpacked/`) before running `parse_traces.py`:
 
@@ -152,13 +151,13 @@ pip install numpy scipy scikit-image matplotlib pillow
 
 ## Notes
 
-The scripts were written with the assistance of a generative AI tool (Claude, Anthropic) and were reviewed and verified by the authors, as disclosed in the Acknowledgements of the manuscript.
+The scripts were written with the assistance of a generative AI tool (Claude, Anthropic) and were reviewed and verified by the authors, as disclosed in the Materials and Methods of the manuscript.
 
 ## Citation
 
 If you use this code, please cite the article above and the archived version of this repository:
 
-> J. Lim, *Kink-map analysis of CT contour traces*, version 1.1.0, Zenodo (2026). https://doi.org/10.5281/zenodo.XXXXXXX
+> J. Lim, *Kink-map analysis of CT contour traces*, version 1.1.0, Zenodo (2026). https://doi.org/10.5281/zenodo.23997301
 
 ## License
 
