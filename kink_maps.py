@@ -1,27 +1,34 @@
 """Step 3: kink statistics and kink-intensity maps of the traced wrinkle contours
-(Supporting Note S1). All lengths are in units of the FOV radius R.
+(SI Appendix, Supplementary Text). All lengths are in units of the FOV radius R.
 
 Definition
   * traced elements are chained into polylines where end points coincide (CHAIN_TOL = 0.02 R);
-    joints closer than MIN_SEG = 0.01 R are merged
+    joints closer than MIN_SEG = 0.01 R are merged. Elements are chained within each section
+    (slide) only (--chain section, default); --chain set chains the elements of all sections of
+    a set together, which was the behaviour of version 1.0 and joins end points of different
+    sections that happen to lie within CHAIN_TOL of each other
   * at every interior joint v the turning angle kappa_v between the incoming and outgoing
-    element is measured (0 = straight continuation, 90 = right-angle bend, 180 = reversal)
+    element is measured (0 = straight continuation, 90 = right-angle bend, 180 = reversal);
+    a joint with kappa_v >= KINK_DEG (--kink-deg, default 20 deg) is a kink
   * along each polyline, sampled every DS = 0.004 R, the local turning intensity is
         I(s) = sum_v kappa_v * exp(-(s - s_v)^2 / (2 sigma^2)),   sigma = SIGMA_S = 0.06 R
         -> straight parts = 0         (blue, HSB hue 225)
-        -> isolated cusp  ~ kappa_v   (red at >= KMAX = 60 deg, hue 0)
+        -> isolated joint ~ kappa_v   (red at >= KMAX = 60 deg, hue 0)
   * surface version: adaptive-kernel local mean of I over the unit disc
     (an interpolated visualization; not used for quantitative comparison)
 
 Pooled statistics per set (all sections), written to kink_metrics.csv:
-  (i)   cusps45_per_R      joints with kappa >= 45 deg per unit trace length (1/R)
+  (i)   kinks_per_R        kinks (kappa >= KINK_DEG) per unit trace length (1/R)
   (ii)  turning_deg_per_R  sum of kappa per unit trace length (deg/R)
-  (iii) frac_len_I_gt30    fraction of trace length with I(s) > 30 deg
+  (iii) frac_len_I_gt      fraction of trace length with I(s) > INT_DEG (--intensity-deg, default 20 deg)
+  The thresholds and the chaining mode are written to every row (kink_deg, intensity_deg, chain).
+  Version 1.0 used 45 deg (then called sharp cusps) and 30 deg: --kink-deg 45 --intensity-deg 30 --chain set.
 
 Input:  <work>/traces_circ.json   (from circle_map.py)
 Output: <out>/kink_metrics.csv, <out>/lines/, <out>/filled/, <out>/filled_faded/, <out>/qa/
 
-Usage:  python kink_maps.py [--work work] [--out out_kink] [SET ...]
+Usage:  python kink_maps.py [--work work] [--out out_kink] [--chain section|set]
+                           [--kink-deg 20] [--intensity-deg 20] [SET ...]
         SET names such as Concave_T1D1; default = all sets in traces_circ.json.
         Rows of kink_metrics.csv for the processed sets are replaced; other rows are kept.
 """
@@ -37,6 +44,10 @@ from scipy.ndimage import gaussian_filter, zoom
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument('--work', default='work', help='folder holding traces_circ.json')
 ap.add_argument('--out', default='out_kink', help='output folder')
+ap.add_argument('--chain', choices=('section', 'set'), default='section',
+                help='chain elements within each section (default) or across all sections of a set (v1.0)')
+ap.add_argument('--kink-deg', type=float, default=20.0, help='kink threshold on the turning angle (deg)')
+ap.add_argument('--intensity-deg', type=float, default=20.0, help='threshold on I(s) for statistic (iii) (deg)')
 ap.add_argument('sets', nargs='*', help='set names to process (default: all)')
 args = ap.parse_args()
 
@@ -52,7 +63,7 @@ SAT, VAL, HUE_MAX = 0.80, 1.00, 225.0
 KMAX = 60.0                 # turning angle mapped to red (>= 60 deg saturates)
 CHAIN_TOL = 0.02            # end-point matching tolerance (unit-disk units)
 MIN_SEG = 0.01              # joints closer than this are merged before measuring angles
-SIGMA_S = 0.06              # along-line spread of a kink's influence
+SIGMA_S = 0.06              # along-line spread of a joint's turning angle
 DS = 0.004                  # resampling step along polylines
 SIG_MIN, K_NN, ALPHA = 0.035, 12, 0.9
 FONT = font_manager.findfont('DejaVu Sans')
@@ -125,10 +136,12 @@ def sample_polyline(P, s, sv, kappa):
         I += kk * np.exp(-0.5 * ((ss - sk) / SIGMA_S) ** 2)
     return np.c_[X, Y], I
 
-def analyse(S):
-    segs = [s for rec in S['slides'] for s in rec['segs_circ']]
-    polys = chain_polylines(segs)
-    pts_all, I_all, kinks = [], [], []
+def analyse(S, chain='section', kink_deg=20.0, int_deg=20.0):
+    if chain == 'set':          # version 1.0: all sections of the set chained together
+        polys = chain_polylines([s for rec in S['slides'] for s in rec['segs_circ']])
+    else:                       # chain within each section, then pool the polylines
+        polys = [P for rec in S['slides'] for P in chain_polylines(rec['segs_circ'])]
+    pts_all, I_all, joints = [], [], []
     total_len, total_turn = 0.0, 0.0
     for P in polys:
         s, sv, kappa = polyline_kinks(P)
@@ -136,25 +149,26 @@ def analyse(S):
         pts_all.append(pts); I_all.append(I)
         total_len += s[-1]; total_turn += kappa.sum() if kappa.size else 0.0
         for sk, kk in zip(sv, kappa):
-            kinks.append((float(np.interp(sk, s, P[:, 0])), float(np.interp(sk, s, P[:, 1])), float(kk)))
+            joints.append((float(np.interp(sk, s, P[:, 0])), float(np.interp(sk, s, P[:, 1])), float(kk)))
     pts_all = np.vstack(pts_all); I_all = np.concatenate(I_all)
-    kinks = np.array(kinks).reshape(-1, 3)
-    stats = dict(n_polylines=len(polys), n_joints=int(len(kinks)),
-                 n_kinks_ge45=int(np.sum(kinks[:, 2] >= 45)) if kinks.size else 0,
-                 n_kinks_ge30=int(np.sum(kinks[:, 2] >= 30)) if kinks.size else 0,
+    joints = np.array(joints).reshape(-1, 3)              # x, y, turning angle of every interior joint
+    n_k = int(np.sum(joints[:, 2] >= kink_deg)) if joints.size else 0
+    stats = dict(n_polylines=len(polys), n_joints=int(len(joints)), n_kinks=n_k,
                  total_length_R=float(total_len),
                  turning_per_length=float(total_turn / max(total_len, 1e-9)),     # deg per R of trace
-                 kinks45_per_length=float((np.sum(kinks[:, 2] >= 45) if kinks.size else 0) / max(total_len, 1e-9)),
-                 frac_len_I_gt30=float(np.mean(I_all > 30)) if I_all.size else 0.0,
-                 mean_I=float(I_all.mean()) if I_all.size else 0.0)
-    return polys, pts_all, I_all, kinks, stats
+                 kinks_per_length=float(n_k / max(total_len, 1e-9)),
+                 frac_len_I_gt=float(np.mean(I_all > int_deg)) if I_all.size else 0.0,
+                 mean_I=float(I_all.mean()) if I_all.size else 0.0,
+                 kink_deg=float(kink_deg), int_deg=float(int_deg))
+    return polys, pts_all, I_all, joints, stats
 
 # ------------------------------------------------------------------ rendering
 def to_px(X, Y, n):
     c, r = n / 2.0, 0.45 * n
     return (c + X * r, c + Y * r)
 
-def render_lines(polys, kinks, stats, label, annotate=True, mark_kinks=False):
+def render_lines(polys, joints, stats, label, annotate=True, mark_kinks=False):
+    kdeg = stats['kink_deg']
     big = N * SS
     im = Image.new('RGB', (big, big), (255, 255, 255))
     dr = ImageDraw.Draw(im)
@@ -173,19 +187,19 @@ def render_lines(polys, kinks, stats, label, annotate=True, mark_kinks=False):
         dr.line([to_px(*p0, big), to_px(*p1, big)], fill=col, width=7 * SS)
         dr.ellipse([to_px(*p1, big)[0] - 3.5 * SS, to_px(*p1, big)[1] - 3.5 * SS,
                     to_px(*p1, big)[0] + 3.5 * SS, to_px(*p1, big)[1] + 3.5 * SS], fill=col)  # round joints
-    if mark_kinks:      # ring marker on sharp cusps (>= 60 deg)
-        for x, y, kk in kinks:
-            if kk >= 60:
+    if mark_kinks:      # ring marker on every kink (>= kink threshold)
+        for x, y, kk in joints:
+            if kk >= kdeg:
                 px, py = to_px(x, y, big)
                 rr = 14 * SS
                 dr.ellipse([px - rr, py - rr, px + rr, py + rr], outline=(200, 0, 0), width=3 * SS)
     if annotate:
         f = ImageFont.truetype(FONT, int(0.028 * big))
-        dr.text((0.03 * big, 0.008 * big), 'colour = local turning angle (0° straight → ≥60° sharp cusp)',
+        dr.text((0.03 * big, 0.008 * big), 'colour = local turning intensity I(s) (0° straight → ≥60°)',
                 fill=(60, 60, 60), font=f)
         f2 = ImageFont.truetype(FONT, int(0.032 * big))
-        dr.text((0.03 * big, 0.958 * big), '%s    cusps ≥45°: %d    turning %.0f°/R' % (
-            label, stats['n_kinks_ge45'], stats['turning_per_length']), fill=(40, 40, 40), font=f2)
+        dr.text((0.03 * big, 0.958 * big), '%s    kinks ≥%g°: %d    turning %.0f°/R' % (
+            label, kdeg, stats['n_kinks'], stats['turning_per_length']), fill=(40, 40, 40), font=f2)
     return im.resize((N, N), Image.LANCZOS)
 
 yy, xx = np.mgrid[0:N, 0:N]
@@ -239,38 +253,43 @@ if unknown:
 summary = {}
 for name in targets:
     S = tr[name]
-    polys, pts, I, kinks, st = analyse(S)
+    polys, pts, I, joints, st = analyse(S, args.chain, args.kink_deg, args.intensity_deg)
     summary[name] = st
     curv, spec = name.split('_')
     label = '%s  %s' % (spec, curv)
-    render_lines(polys, kinks, st, label, annotate=True).save(os.path.join(OUT, 'lines', 'kink_lines_%s.png' % name))
-    render_lines(polys, kinks, st, label, annotate=False).save(os.path.join(OUT, 'lines', 'kink_lines_plain_%s.png' % name))
-    render_lines(polys, kinks, st, label, annotate=True, mark_kinks=True).save(os.path.join(OUT, 'lines', 'kink_lines_marked_%s.png' % name))
+    render_lines(polys, joints, st, label, annotate=True).save(os.path.join(OUT, 'lines', 'kink_lines_%s.png' % name))
+    render_lines(polys, joints, st, label, annotate=False).save(os.path.join(OUT, 'lines', 'kink_lines_plain_%s.png' % name))
+    render_lines(polys, joints, st, label, annotate=True, mark_kinks=True).save(os.path.join(OUT, 'lines', 'kink_lines_marked_%s.png' % name))
     F, Dmin = kernel_field(pts, I)
     render_filled(F).save(os.path.join(OUT, 'filled', 'kink_fill_%s.png' % name))
     render_filled(F, Dmin=Dmin).save(os.path.join(OUT, 'filled_faded', 'kink_fill_faded_%s.png' % name))
     render_filled(F, polys=polys).save(os.path.join(OUT, 'qa', 'qa_kink_fill_%s.png' % name))
-    print('%-14s polylines=%2d joints=%3d cusps>=45:%3d (>=30:%3d)  turning=%5.0f°/R  len=%.2fR  frac(I>30)=%.2f' % (
-        name, st['n_polylines'], st['n_joints'], st['n_kinks_ge45'], st['n_kinks_ge30'],
-        st['turning_per_length'], st['total_length_R'], st['frac_len_I_gt30']))
+    print('%-14s polylines=%2d joints=%3d kinks>=%g:%3d  turning=%5.0f°/R  len=%.2fR  frac(I>%g)=%.3f' % (
+        name, st['n_polylines'], st['n_joints'], args.kink_deg, st['n_kinks'],
+        st['turning_per_length'], st['total_length_R'], args.intensity_deg, st['frac_len_I_gt']))
     if len(targets) == 1:
         print('  joints (x, y, turning deg):')
-        for x, y, kk in sorted(kinks.tolist(), key=lambda t: -t[2]):
+        for x, y, kk in sorted(joints.tolist(), key=lambda t: -t[2]):
             print('    (%+.2f, %+.2f)  %5.1f°' % (x, y, kk))
 
 # ---- metrics table: replace rows of the sets processed now, keep the others, no duplicates
-HEADER = ['set', 'n_polylines', 'n_joints', 'n_cusps_ge45', 'n_cusps_ge30', 'total_length_R',
-          'turning_deg_per_R', 'cusps45_per_R', 'frac_len_I_gt30', 'mean_I']
+HEADER = ['set', 'n_polylines', 'n_joints', 'n_kinks', 'total_length_R', 'turning_deg_per_R', 'kinks_per_R',
+          'frac_len_I_gt', 'mean_I', 'kink_deg', 'intensity_deg', 'chain']
 csv_path = os.path.join(OUT, 'kink_metrics.csv')
 rows = {}
 if os.path.exists(csv_path):
     with open(csv_path, newline='') as f:
         for row in csv.DictReader(f):
-            rows[row['set']] = [row[k] for k in HEADER]
+            if all(k in row for k in HEADER) and (row['kink_deg'], row['intensity_deg'], row['chain']) == (
+                    '%g' % args.kink_deg, '%g' % args.intensity_deg, args.chain):
+                rows[row['set']] = [row[k] for k in HEADER]
+            else:
+                print('  dropped row %s of %s (other version or other criteria)' % (row.get('set'), csv_path))
 for name, st in summary.items():
-    rows[name] = [name, st['n_polylines'], st['n_joints'], st['n_kinks_ge45'], st['n_kinks_ge30'],
-                  '%.3f' % st['total_length_R'], '%.1f' % st['turning_per_length'],
-                  '%.2f' % st['kinks45_per_length'], '%.3f' % st['frac_len_I_gt30'], '%.1f' % st['mean_I']]
+    rows[name] = [name, st['n_polylines'], st['n_joints'], st['n_kinks'],
+                  '%.4f' % st['total_length_R'], '%.2f' % st['turning_per_length'],
+                  '%.4f' % st['kinks_per_length'], '%.4f' % st['frac_len_I_gt'], '%.2f' % st['mean_I'],
+                  '%g' % args.kink_deg, '%g' % args.intensity_deg, args.chain]
 with open(csv_path, 'w', newline='') as f:
     w = csv.writer(f)
     w.writerow(HEADER)
