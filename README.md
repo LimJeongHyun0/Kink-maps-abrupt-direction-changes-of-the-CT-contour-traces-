@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/35117886/README.md)
+[README.md].
 # Kink maps of CT wrinkle-contour traces
 
 Analysis code for the wrinkle-contour kink statistics (Figure 4; Supporting Notes S1 and S2 and the related Supporting Information) in:
