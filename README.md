@@ -1,10 +1,9 @@
-[README.md](https://github.com/user-attachments/files/35117764/README.md)
-[README.md](https://github.com/user-attachments/files/35117778/README.md)
+[README.md](https://github.com/user-attachments/files/35117886/README.md)
 # Kink maps of CT wrinkle-contour traces
 
 Analysis code for the wrinkle-contour kink statistics (Figure 4; Supporting Notes S1 and S2 and the related Supporting Information) in:
 
-> J. Lim *et al.*, "Porosity-Mediated Conformality of Nanomesh Electrodes to Skin Roughness and Curvature," 
+> J. Lim *et al.*, "Porosity-Mediated Conformality of Nanomesh Electrodes to Skin Roughness and Curvature,"
 
 The scripts take wrinkle contours traced manually as straight line elements on synchrotron X-ray micro-CT sections and chain them into polylines. They then measure the turning angle at every joint and report how often and how strongly the contours change direction. The output is three pooled statistics per specimen and a kink-intensity map.
 
